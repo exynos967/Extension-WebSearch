@@ -20,6 +20,7 @@
                     <option value="serper">Serper</option>
                     <option value="tavily">Tavily</option>
                     <option value="zai">Z.AI</option>
+                    <option value="exa">Exa</option>
                 </select>
                 <div id="serpapi_settings">
                     <div class="flex-container alignItemsBaseline">
@@ -89,6 +90,19 @@
                         Set the API Key in the Chat Completion API connection settings.
                     </span>
                     <b>Will use Common API. Coding API is not supported!</b>
+                </div>
+                <div id="websearch_exa_settings">
+                    <div class="flex-container alignItemsBaseline">
+                        <h4 for="exa_key" class="flex1 margin0">
+                            <a href="https://exa.ai/" target="_blank" rel="noopener noreferrer">Exa Key</a>
+                        </h4>
+                        <div id="exa_key" class="menu_button menu_button_icon">
+                            <i class="fa-solid fa-key"></i>
+                            <span>Click to set</span>
+                        </div>
+                    </div>
+                    <label for="websearch_exa_url">Exa API URL</label>
+                    <input type="text" class="text_pole" id="websearch_exa_url" value="">
                 </div>
                 <label for="websearch_cache_lifetime">Cache Lifetime <small>(seconds)</small></label>
                 <input type="number" class="text_pole" id="websearch_cache_lifetime" value="">

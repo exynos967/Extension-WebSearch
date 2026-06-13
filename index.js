@@ -27,6 +27,7 @@ const WEBSEARCH_SOURCES = {
     KOBOLDCPP: 'koboldcpp',
     SERPER: 'serper',
     ZAI: 'zai',
+    EXA: 'exa',
 };
 
 const VISIT_TARGETS = {
@@ -122,6 +123,7 @@ const defaultSettings = {
     regex: [],
     searxng_url: '',
     searxng_preferences: '',
+    exa_url: 'https://api.exa.ai',
     include_images: false,
 };
 
@@ -200,6 +202,16 @@ async function isSearchAvailable() {
 
     if (extension_settings.websearch.source === WEBSEARCH_SOURCES.ZAI && !secret_state[SECRET_KEYS.ZAI]) {
         console.debug('WebSearch: no Z.AI key found');
+        return false;
+    }
+
+    if (extension_settings.websearch.source === WEBSEARCH_SOURCES.EXA && !secret_state[SECRET_KEYS.EXA]) {
+        console.debug('WebSearch: no Exa key found');
+        return false;
+    }
+
+    if (extension_settings.websearch.source === WEBSEARCH_SOURCES.EXA && !extension_settings.websearch.exa_url) {
+        console.debug('WebSearch: no Exa URL');
         return false;
     }
 
@@ -1176,6 +1188,51 @@ async function doZaiQuery(query) {
 }
 
 /**
+ * Performs a search query via Exa.
+ * @param {string} query Search query
+ * @returns {Promise<{textBits: string[], links: string[], images: string[]}>} Extracted text
+ */
+async function doExaQuery(query) {
+    const textBits = [];
+    const links = [];
+    const images = [];
+
+    const result = await fetch('/api/search/exa', {
+        method: 'POST',
+        headers: getRequestHeaders(),
+        body: JSON.stringify({
+            query,
+            baseUrl: extension_settings.websearch.exa_url,
+        }),
+    });
+
+    if (!result.ok) {
+        console.debug('WebSearch: Exa request failed', result.statusText);
+        return;
+    }
+
+    const data = await result.json();
+
+    if (!Array.isArray(data?.results)) {
+        console.debug('WebSearch: invalid Exa search results format');
+        return;
+    }
+
+    for (const item of data.results) {
+        links.push(item.url);
+        if (Array.isArray(item.highlights) && item.highlights.length > 0) {
+            textBits.push(`${item.title}\n${item.highlights.join('\n')}`);
+        } else if (item.text) {
+            textBits.push(`${item.title}\n${item.text}`);
+        } else if (item.summary) {
+            textBits.push(`${item.title}\n${item.summary}`);
+        }
+    }
+
+    return { textBits, links, images };
+}
+
+/**
  * Performs a search query via SearXNG.
  * @param {string} query Search query
  * @returns {Promise<{textBits: string[], links: string[], images: string[]}>} Extracted text
@@ -1322,6 +1379,8 @@ async function performSearchRequest(query, options = { useCache: true }) {
                     return await doSerperQuery(query);
                 case WEBSEARCH_SOURCES.ZAI:
                     return await doZaiQuery(query);
+                case WEBSEARCH_SOURCES.EXA:
+                    return await doExaQuery(query);
                 default:
                     throw new Error(`Unrecognized search source: ${extension_settings.websearch.source}`);
             }
@@ -1646,10 +1705,12 @@ jQuery(async () => {
         $('#websearch_koboldcpp_settings').toggle(extension_settings.websearch.source === WEBSEARCH_SOURCES.KOBOLDCPP);
         $('#websearch_serper_settings').toggle(extension_settings.websearch.source === WEBSEARCH_SOURCES.SERPER);
         $('#websearch_zai_settings').toggle(extension_settings.websearch.source === WEBSEARCH_SOURCES.ZAI);
+        $('#websearch_exa_settings').toggle(extension_settings.websearch.source === WEBSEARCH_SOURCES.EXA);
 
         $('#serpapi_key').toggleClass('success', !!secret_state[SECRET_KEYS.SERPAPI]);
         $('#tavily_key').toggleClass('success', !!secret_state[SECRET_KEYS.TAVILY]);
         $('#serper_key').toggleClass('success', !!secret_state[SECRET_KEYS.SERPER]);
+        $('#exa_key').toggleClass('success', !!secret_state[SECRET_KEYS.EXA]);
     }
 
     const getContainer = () => $(document.getElementById('websearch_container') ?? document.getElementById('extensions_settings2'));
@@ -1680,6 +1741,9 @@ jQuery(async () => {
     });
     $('#serper_key').on('click', async () => {
         await handleApiKeyManagement(SECRET_KEYS.SERPER, 'Serper', $('#serper_key'));
+    });
+    $('#exa_key').on('click', async () => {
+        await handleApiKeyManagement(SECRET_KEYS.EXA, 'Exa', $('#exa_key'));
     });
     $('#websearch_budget').val(extension_settings.websearch.budget);
     $('#websearch_budget').on('input', () => {
@@ -1772,6 +1836,12 @@ jQuery(async () => {
     $('#websearch_searxng_preferences').val(extension_settings.websearch.searxng_preferences);
     $('#websearch_searxng_preferences').on('input', () => {
         extension_settings.websearch.searxng_preferences = String($('#websearch_searxng_preferences').val());
+        saveSettingsDebounced();
+    });
+
+    $('#websearch_exa_url').val(extension_settings.websearch.exa_url);
+    $('#websearch_exa_url').on('input', () => {
+        extension_settings.websearch.exa_url = String($('#websearch_exa_url').val());
         saveSettingsDebounced();
     });
 
