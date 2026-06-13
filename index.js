@@ -18,6 +18,20 @@ const supportsMediaArrays = typeof ensureMessageMediaIsArray === 'function';
 const storage = localforage.createInstance({ name: 'SillyTavern_WebSearch' });
 const extensionPromptMarker = '___WebSearch___';
 
+// EXA API key — stored client-side in localforage (no server endpoint needed)
+let exaApiKey = null;
+async function loadExaApiKey() {
+    try {
+        exaApiKey = await storage.getItem('exa_api_key') || null;
+    } catch {
+        exaApiKey = null;
+    }
+}
+async function saveExaApiKey(key) {
+    exaApiKey = key || null;
+    await storage.setItem('exa_api_key', key || '');
+}
+
 const WEBSEARCH_SOURCES = {
     SERPAPI: 'serpapi',
     EXTRAS: 'extras',
@@ -205,7 +219,7 @@ async function isSearchAvailable() {
         return false;
     }
 
-    if (extension_settings.websearch.source === WEBSEARCH_SOURCES.EXA && !secret_state[SECRET_KEYS.EXA]) {
+    if (extension_settings.websearch.source === WEBSEARCH_SOURCES.EXA && !exaApiKey) {
         console.debug('WebSearch: no Exa key found');
         return false;
     }
@@ -1197,17 +1211,31 @@ async function doExaQuery(query) {
     const links = [];
     const images = [];
 
-    const result = await fetch('/api/search/exa', {
+    if (!exaApiKey) {
+        console.debug('WebSearch: Exa key not available');
+        return;
+    }
+
+    const baseUrl = extension_settings.websearch.exa_url || 'https://api.exa.ai';
+    const result = await fetch(`${baseUrl}/search`, {
         method: 'POST',
-        headers: getRequestHeaders(),
+        headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': exaApiKey,
+        },
         body: JSON.stringify({
             query,
-            baseUrl: extension_settings.websearch.exa_url,
+            type: 'auto',
+            numResults: 10,
+            contents: {
+                highlights: true,
+            },
         }),
     });
 
     if (!result.ok) {
-        console.debug('WebSearch: Exa request failed', result.statusText);
+        const text = await result.text();
+        console.debug('WebSearch: Exa request failed', result.statusText, text);
         return;
     }
 
@@ -1695,6 +1723,8 @@ jQuery(async () => {
         }
     }
 
+    await loadExaApiKey();
+
     const html = await renderExtensionTemplateAsync('third-party/Extension-WebSearch', 'settings');
 
     function switchSourceSettings() {
@@ -1710,7 +1740,7 @@ jQuery(async () => {
         $('#serpapi_key').toggleClass('success', !!secret_state[SECRET_KEYS.SERPAPI]);
         $('#tavily_key').toggleClass('success', !!secret_state[SECRET_KEYS.TAVILY]);
         $('#serper_key').toggleClass('success', !!secret_state[SECRET_KEYS.SERPER]);
-        $('#exa_key').toggleClass('success', !!secret_state[SECRET_KEYS.EXA]);
+        $('#exa_key').toggleClass('success', !!exaApiKey);
     }
 
     const getContainer = () => $(document.getElementById('websearch_container') ?? document.getElementById('extensions_settings2'));
@@ -1743,7 +1773,25 @@ jQuery(async () => {
         await handleApiKeyManagement(SECRET_KEYS.SERPER, 'Serper', $('#serper_key'));
     });
     $('#exa_key').on('click', async () => {
-        await handleApiKeyManagement(SECRET_KEYS.EXA, 'Exa', $('#exa_key'));
+        const key = await callGenericPopup('Enter your Exa API Key', POPUP_TYPE.INPUT, '', {
+            rows: 2,
+            customButtons: [{
+                text: 'Remove Key',
+                appendAtEnd: true,
+                result: POPUP_RESULT.NEGATIVE,
+                action: async () => {
+                    await saveExaApiKey('');
+                    $('#exa_key').toggleClass('success', false);
+                    toastr.success('Exa API Key removed');
+                },
+            }],
+        });
+
+        if (key) {
+            await saveExaApiKey(String(key).trim());
+            $('#exa_key').toggleClass('success', true);
+            toastr.success('Exa API Key saved');
+        }
     });
     $('#websearch_budget').val(extension_settings.websearch.budget);
     $('#websearch_budget').on('input', () => {
